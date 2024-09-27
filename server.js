@@ -1,0 +1,358 @@
+const https = require('https');
+const http = require('http');
+const fs = require('fs');
+const WebSocket = require('ws');
+const crypto = require('crypto');
+
+var connectedServers = [];
+
+var connectedClients = [];
+
+var clientList = {};
+
+/*const {publicKey, privateKey} = crypto.generateKeyPairSync("rsa", {
+	modulusLength: 2048,
+	publicExponent: 65537,
+	hashAlgorithm: "PSS",
+	publicKeyEncoding: {
+		type: "pkcs1",
+		format: "pem"
+	},
+	privateKeyEncoding: {
+		type: "pkcs8",
+		format: "pem"
+	}
+});*/
+
+var publicKey = crypto.createPublicKey(fs.readFileSync("pubk.pem"));
+var privateKey = crypto.createPrivateKey(fs.readFileSync("privk.pem"));
+
+var myIP = "wss://unknownweb.ddns.net:81";
+var myWIP = "https://unknownweb.ddns.net:81";
+
+function encryptData(k, d) {
+	var edata = crypto.publicEncrypt({
+		key: k,
+		padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+		oaepHash: "sha256"
+	}, Buffer.from(d));
+	return edata;
+}
+
+function decryptData(d, k = privateKey) {
+	var ddata = crypto.privateDecrypt({
+		key: k,
+		padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+		oaepHash: "sha256"
+	}, d);
+	return ddata;
+}
+
+function removeClient(pk) {
+	for (var i = 0; i < connectedClients.length; i++) {
+		if (connectedClients[i].public_key == pk) {
+			connectedClients.splice(i, 1);
+			return true;
+		}
+	}
+	return false;
+}
+
+function removeServer(pk) {
+	for (var i = 0; i < connectedServers.length; i++) {
+		if (connectedServers[i].public_key == pk) {
+			connectedServers.splice(i, 1);
+			return true;
+		}
+	}
+	return false;
+}
+
+function resolveServerSocket(IP) {
+	for (var i = 0; i < connectedServers.length; i++) {
+		if (connectedServers[i].ip == IP) {
+			return connectedServers[i];
+		}
+	}
+	return null;
+}
+
+function getServerPubKey(IP) {
+	for (var i = 0; i < authdServers.length; i++) {
+		if (authdServers[i].ip == IP) {
+			return authdServers[i].public_key;
+		}
+	}
+	return null;
+}
+
+function sendToList(websockets, msg, sender = "") {
+	for (var i = 0; i < websockets.length; i++) {
+		var fp = typeof(websockets[i].fingerprint) !== 'undefined' ? websockets[i].fingerprint : "nil";
+		//console.log(fp);
+		//console.log(sender);
+		if (fp != sender) {
+			websockets[i].send(msg);
+		}
+	}
+}
+
+function formMessage(type) {
+	var msg = {};
+	msg.type = type;
+	switch (type) {
+		case "client_update":
+			msg.clients = [];
+
+			for (var i = 0; i < connectedClients.length; i++) {
+				msg.clients.push(connectedClients[i].public_key);
+			}
+			break;
+		case "client_list":
+			msg.servers = [];
+			for (var i = 0; i < connectedServers.length; i++) {
+        var tclient = [];
+        if (clientList[connectedServers[i].ip] != undefined) {
+          tclient = clientList[connectedServers[i].ip];
+        }
+				msg.servers.push({
+					address: connectedServers[i].ip,
+					clients: tclient
+				});
+			}
+			var my_server_clients = {
+				address: myIP,
+				clients: []
+			};
+			for (var i = 0; i < connectedClients.length; i++) {
+				my_server_clients.clients.push(connectedClients[i].public_key);
+			}
+			msg.servers.push(my_server_clients);
+			break;
+    case "server_hello":
+      msg.type = "signed_data";
+      msg.data = {
+        type: "server_hello",
+        sender: myIP
+      };
+      msg.counter = 0;
+      msg.signature = crypto.sign("SHA256", Buffer.from(JSON.stringify(msg.data) + msg.counter), privateKey).toString('base64');
+      break;
+		default:
+			break;
+	}
+	return msg;
+}
+
+function handleMessage(ws, msg) {
+	var dataObj = JSON.parse(msg);
+	console.log("Received: " + dataObj.type);
+  console.log("From: " + ws.fingerprint);
+  console.log(dataObj);
+  try {
+  	switch (dataObj.type) {
+  		case "signed_data":
+  			var data = dataObj.data;
+  			console.log("t: " + data.type);
+  			switch (data.type) {
+  				case "hello":
+  					// retrieve data.public_key (this is the client's RSA public key)
+  					if (!(data.public_key == undefined)) {
+  						ws.type = "client";
+  						ws.public_key = data.public_key;
+  						ws.fingerprint = crypto.createHash('sha256').update(data.public_key).digest('base64');
+  						console.log("New Client Connected!");
+  						connectedClients.push(ws);
+  						sendToList(connectedClients.slice(0,-1), JSON.stringify(formMessage("client_list")));
+  						var client_uplist = formMessage("client_update");
+  						sendToList(connectedServers, JSON.stringify(client_uplist));
+  					}
+  					break;
+  				case "chat":
+  					for (var ds of data.destination_servers) {
+  						// for each destination server, pass on the dataObj
+  						// if destination_server = this_server, broadcast dataObj to all clients
+  						console.log(ds);
+  						switch(ws.type) {
+  							case "client":
+  								if (ds == myIP) {
+  									sendToList(connectedClients, JSON.stringify(dataObj), ws.fingerprint);
+  								} else {
+  									var dest_server = resolveServerSocket(ds);
+  									if (dest_server != null) {
+  										dest_server.send(JSON.stringify(dataObj));
+  									} else {
+  										//send failed?
+  									}
+  								}
+  								break;
+  							case "server":
+  								if (ds == myIP) {
+  									sendToList(connectedClients, JSON.stringify(dataObj));
+  								}
+  								break;
+  							default:
+  								break;
+  						}
+  					}
+  					break;
+  				case "public_chat":
+  					sendToList(connectedClients, JSON.stringify(dataObj), data.sender);
+  					sendToList(connectedServers, JSON.stringify(dataObj));
+  					break;
+  				case "server_hello":
+  					var pk = getServerPubKey(data.sender);
+  					if (pk != null) {
+              var v = crypto.verify("SHA256", Buffer.from(JSON.stringify(data) + dataObj.counter), crypto.createPublicKey(pk), Buffer.from(dataObj.signature));
+  						console.log(v);
+              ws.ip = data.sender;
+  						ws.public_key = pk;
+              ws.type = "server";
+              connectedServers.push(ws);
+              console.log("Connected to server: " + ws.ip);
+  					}
+  					break;
+  				default:
+  					break;
+  			}
+  			break;
+  		case "client_list_request":
+  			if (ws.type == "client") {
+  				var client_list = formMessage("client_list");
+  				ws.send(JSON.stringify(client_list));
+  			}
+  			break;
+  		case "client_update":
+  			if (ws.type == "server") {
+  				clientList[ws.ip] = dataObj.clients;
+  				var client_list = formMessage("client_list");
+  				sendToList(connectedClients, JSON.stringify(client_list));
+  			}
+  			break;
+  		case "client_update_request":
+  			if (ws.type == "server") {
+  				var client_update = formMessage("client_update");
+  				ws.send(JSON.stringify(client_update));
+  			}
+  			break;
+  		default:
+  			break;
+	 }
+  } catch (error) {
+    console.log(error);
+  }
+}
+
+var args = process.argv.slice(2);
+
+var port = '80';
+
+var authdServers = [];
+
+authdServers.push({
+	ip:'ws://203.221.52.227:8765',
+	public_key: "-----BEGIN PUBLIC KEY-----\n" +
+"MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsa1glacGuN85kBX25Zl3\n" +
+"o2behO/gCKf//IXlTkyjUBlprzJAhFNzCARH2Zfr3TZNbujWz/yi82nN63TZLQMh\n" +
+"LN/Rv4fASs3Xe+u50loji1ternXAcavHtmdaBblCHGmQ2FEzsCmyD35bRiH8jPjR\n" +
+"UXkJmASKARu7MPVOXRPVZLXG7TArAB1Gm4ao9BLiarBC7rDLH8Ui2lM9if5WeMK7\n" +
+"HMrvINXL5WSXmXBjmU3ScL51klUqX/5E9i+W7Yh8aUYb/HEn4MiyzaMhHBGB2hqq\n" +
+"J/c907T1yyZqaDDaIMXWbBJedQZlWa0Ohbd0+gUk7Tsw/+6j3ZPTz4aUEN2Zq3bJ\n" +
+"aQIDAQAB\n" +
+"-----END PUBLIC KEY-----"
+});
+
+if (args.length > 0) {
+	port = args[0];
+	authdServers = [];
+}
+
+authdServers.forEach((s) => {
+	var websock = new WebSocket(s.ip, {perMessageDeflate: false});
+	websock.on("error", (e) => {
+		console.log(e);
+	});
+	websock.on("message", (message, isBinary) => {
+		var msg = isBinary ? message : message.toString();
+		handleMessage(websock, msg);
+	});
+	websock.on("open", () => {
+		websock.type = "server";
+		websock.ip = s.ip;
+		websock.public_key = s.public_key;
+		connectedServers.push(websock);
+		console.log("Connected to server: " + s.ip);
+		websock.send(JSON.stringify(formMessage("server_hello")));
+	});
+});
+
+var options = {
+	key: fs.readFileSync("client-key.pem"),
+	cert: fs.readFileSync("client-cert.pem")
+};
+
+var app = (req, res) => {
+	console.log(`${req.method} Request to ${req.url}`);
+	switch(req.method) {
+		case "POST":
+			let data = '';
+			req.on('data', (chunk) => {
+				data += chunk;
+			});
+			req.on('end', () => {
+				res.statusCode = 201;
+				var buf = new Buffer(data.toString('binary'), 'binary');
+				fs.writeFile("testfile.png", buf, (err) => {
+					if (err) {
+						console.log(err);
+					}
+					var link = myWIP + "/testfile.png";
+					res.setHeader('Content-Type', 'text/html');
+					res.end('File Created at: ' + link);
+				});
+			});
+			break;
+		case "GET":
+			res.statusCode = 200;
+			res.setHeader('Content-Type', 'text/html');
+			res.end(fs.readFileSync("index.html"));
+			break;
+		default:
+			res.statusCode = 404;
+			res.setHeader('Content-Type', 'text/plain');
+			res.end('404 Page Not Found');
+			break;
+	}
+};
+
+var server = http.createServer(app).listen(port, () => {
+	console.log(`HTTP Server Running on localhost:${port}`);
+});
+
+var httpsServer = https.createServer(options, app).listen(parseInt(port) + 1, () => {
+	console.log(`HTTPS Server Running on localhost:${parseInt(port) + 1}`);
+});
+
+var wss = new WebSocket.Server({
+	server: httpsServer
+});
+
+wss.on('connection', (ws) => {
+	ws.on('message', (message) => {
+		//console.log('Received: ' + message);
+		handleMessage(ws, message);
+	});
+	ws.on('close', () => {
+		if (ws.type == "client") {
+			if (removeClient(ws.public_key)) {
+				sendToList(connectedServers, JSON.stringify(formMessage("client_update")));
+				sendToList(connectedClients, JSON.stringify(formMessage("client_list")));
+				console.log("Client Disconnected!");
+			}
+		} else if (ws.type == "server") {
+			if (removeServer(ws.public_key)) {
+				console.log("Server Disconnected!");
+			}
+		}
+	});
+});

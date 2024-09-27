@@ -1,0 +1,403 @@
+<html>
+	<head>
+		<title>
+			Chat
+		</title>
+	</head>
+	<body>
+		Chat Protocol
+		<br>
+		<form action='javascript:void(0)' id='form' onsubmit="sendMsg('signed_data')">
+			<input type='text' name='message' id='message' />
+			<br>
+			<input type='submit' name='submit' id='submit' />
+		</form>
+		<br>
+		<form action='javascript:void(0)' id="client_list">
+		</form>
+		<form action='javascript:void(0)' id="file_upload">
+			<input type="file" id="file" name="file" onchange="previewFile(this)" accept="image/png, image/jpeg" />
+			<img id='preview' src="#">
+		</form>
+		<div id="chat_window">
+		</div>
+	</body>
+<script src="https://cdn.jsdelivr.net/npm/node-forge@1.0.0/dist/forge.min.js"></script>
+<script>
+
+function previewFile(obj) {
+	var file = obj.files[0];
+	var preview = document.getElementById("preview");
+	var reader = new FileReader();
+
+	reader.onloadend = function() {
+		preview.src = reader.result;
+	}
+
+	if (file) {
+		reader.readAsDataURL(file);
+	} else {
+		preview.src = "";
+	}
+}
+
+function sendFile() {
+
+}
+
+var ws = new WebSocket("wss://unknownweb.ddns.net:81");
+
+var rsa = forge.rsa;
+var pki = forge.pki;
+
+var publicKey;
+var privateKey;
+var pem;
+
+var clientList = {};
+
+var myCounter = 0;
+
+var chat_window = document.getElementById('chat_window');
+
+function checkCounter(fp, new_v) {
+	for (var s in clientList) {
+		for (var j = 0; j < clientList[s].length; j++) {
+			if (fp == clientList[s][j].fp) {
+				if (clientList[s][j].counter < new_v) {
+					clientList[s][j].counter = new_v;
+					return j;
+				} else {
+					return -1;
+				}
+			}
+		}
+	}
+	return -1;
+}
+
+async function verifySig(dataObj, pk) {
+	var sig = await sha256(JSON.stringify(dataObj.data) + dataObj.counter);
+	//console.log(sig);
+	//console.log(dataObj.signature);
+	return verify(sig, pk, dataObj.signature);
+}
+
+function getClientPk(fp) {
+	for (var s in clientList) {
+		for (var j = 0; j < clientList[s].length; j++) {
+			if (fp == clientList[s][j].fp) {
+				return clientList[s][j].public_key;
+			}
+		}
+	}
+	return -1;
+}
+
+function getClientIndex(fp, s = null) {
+	if (clientList[s] == null) return -1;
+	for (var j = 0; j < clientList[s].length; j++) {
+		if (fp == clientList[s][j].fp) {
+			return j;
+		}
+	}
+	return -1;
+}
+
+function toggleSelect(obj) {
+	if (obj.getAttribute("selectedstate") == "off") {
+		obj.style.background = "#00aa00";
+		obj.setAttribute("selectedstate", "on");
+	} else {
+		obj.style.background = "#aa0000";
+		obj.setAttribute("selectedstate", "off");
+	}
+}
+
+function updateGUI() {
+	var client_list = document.getElementById("client_list");
+	client_list.innerHTML = "";
+	var me = document.createElement("a");
+	me.innerHTML = my_fp;
+	client_list.appendChild(me);
+	for (s in clientList) {
+		var server_title = document.createElement('p');
+		server_title.innerHTML = s;
+		client_list.appendChild(server_title);
+		for (var i = 0; i < clientList[s].length; i++) {
+			if (clientList[s][i].fp != my_fp) {
+				var client_btn = document.createElement('button');
+				client_btn.innerHTML = "Client: " + i;
+				client_btn.setAttribute("selectedstate", "off");
+				client_btn.className = "client_btns";
+				client_btn.setAttribute("title", clientList[s][i].fp);
+				client_btn.setAttribute("onclick", "toggleSelect(this)");
+				client_btn.setAttribute("destserver", s);
+				client_list.appendChild(client_btn);
+			}
+		}
+	}
+}
+
+async function handleMessage(msg) {
+	console.log("Received Message!");
+	var dataObj = JSON.parse(msg);
+	console.log(dataObj);
+	switch (dataObj.type) {
+		case "signed_data":
+			/*var sig = Buffer.from(JSON.stringify(dataObj.data)).toString('base64') + dataObj.counter;
+			sig = crypto.createHash('sha256').update(sig).digest('base64');
+			if (sig != dataObj.signature) {
+				return -1;
+			}*/
+			var data = dataObj.data;
+			switch (data.type) {
+				case "chat":
+					var chat = {};
+					for (var i = 0; i < data.symm_keys.length; i++) {
+						try {
+							var tkey = rsaDecrypt(data.symm_keys[i]);
+							var tchat = aesDecrypt(tkey, data.iv, data.chat);
+							if (tchat != null) {
+								chat = JSON.parse(tchat);
+								break;
+							}
+						} catch (error) {
+							console.log(error);
+						}
+					}
+					console.log(chat);
+					if (chat.participants != undefined) {
+						var sender = chat.participants[0];
+						var s_pk = getClientPk(sender);
+						if (verifySig(dataObj, s_pk)) {
+							chat_window.innerHTML = sender + ": " + chat.message + "<br>" + chat_window.innerHTML;
+						} else {
+							console.log("invalid signature verification");
+						}
+					}
+					break;
+				case "public_chat":
+					if (checkCounter(data.sender, dataObj.counter) != -1) {
+						chat_window.innerHTML = data.sender + ": " + data.message + "<br>" + chat_window.innerHTML;
+						//console.log(data.sender + ": " + data.message);
+					}
+					break;
+				default:
+					break;
+			}
+			break;
+		case "client_list":
+			for (var i = 0; i < dataObj.servers.length; i++) {
+				var t_cl = [];
+				for (var j = 0; j < dataObj.servers[i].clients.length; j++) {
+					var c = dataObj.servers[i].clients[j];
+					var c_fp = await sha256(c);
+					if (c_fp != my_fp) {
+						var ind = getClientIndex(c, dataObj.servers[i].address);
+						if (ind == -1) {
+							t_cl.push({
+								fp: c_fp,
+								public_key: c,
+								counter: 0
+							});
+						} else {
+							t_cl.push(clientList[dataObj.servers[i].address][ind]);
+						}
+					}
+				}
+				clientList[dataObj.servers[i].address] = t_cl;
+				updateGUI();
+			}
+			break;
+		default:
+			break;
+	}
+}
+
+ws.addEventListener("open", (e) => {
+	console.log("connected to server");
+	rsa.generateKeyPair({bits: 2048, e: 0x10001}, async function(err, keypair) {
+		privateKey = keypair.privateKey;
+		publicKey = keypair.publicKey;
+		pem = pki.publicKeyToPem(publicKey);
+		console.log(pem);
+		my_fp = await sha256(pem);
+		console.log(my_fp);
+		sendMsg("signed_data", "hello").then(() => {
+			sendMsg("client_list_request");
+		});
+	});
+});
+
+ws.addEventListener("message", (event) => {
+	handleMessage(event.data);
+});
+
+async function sha256(message) {
+	var msgBuffer = new TextEncoder().encode(message);
+	var hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+	var hashArray = Array.from(new Uint8Array(hashBuffer));
+	var hash64 = btoa(hashArray.map(b => String.fromCharCode(b)).join(''));
+	return hash64;
+}
+
+function aesEncrypt(msg) {
+	var key = forge.random.getBytesSync(32);
+	var iv = forge.random.getBytesSync(16);
+	var cipher = forge.cipher.createCipher('AES-GCM', key);
+	cipher.start({
+		iv: iv,
+		tagLength: 0
+	});
+	cipher.update(forge.util.createBuffer(msg));
+	cipher.finish();
+	var enc = cipher.output.data;
+	return {iv:btoa(iv),key:btoa(key),out:btoa(enc)};
+}
+
+function aesDecrypt(key, iv, msg) {
+	key = atob(key);
+	iv = atob(iv);
+	msg = atob(msg);
+	var decipher = forge.cipher.createDecipher('AES-GCM', key);
+	decipher.start({
+		iv: iv,
+		tagLength: 0
+	});
+	decipher.update(forge.util.createBuffer(msg));
+	var pass = decipher.finish();
+	if (pass) {
+		return decipher.output.data;
+	} else {
+		return null;
+	}
+}
+
+function rsaEncrypt(msg, pk) {
+	return btoa(pki.publicKeyFromPem(pk).encrypt(msg, 'RSA-OAEP', {
+		md: forge.md.sha256.create()
+	}));
+}
+
+function rsaDecrypt(msg) {
+	return privateKey.decrypt(atob(msg), 'RSA-OAEP', {
+		md: forge.md.sha256.create()
+	});
+}
+
+var pss = forge.pss.create({
+	md: forge.md.sha256.create(),
+	mgf: forge.mgf.mgf1.create(forge.md.sha256.create()),
+	saltLength: 32,
+});
+
+function sign(msg) {
+	var md = forge.md.sha256.create();
+	md.update(forge.util.createBuffer(msg));
+	return btoa(privateKey.sign(md, pss));
+}
+
+function verify(msg, pk, sig) {
+	sig = atob(sig);
+	var md = forge.md.sha256.create();
+	md.update(forge.util.createBuffer(msg));
+	return pki.publicKeyFromPem(pk).verify(md.digest().getBytes(), sig, pss);
+}
+
+var my_fp = "";
+
+async function sendMsg(type, msgType = "") {
+	var sendMessage = {};
+	console.log("Send Message!");
+	sendMessage.type = type;
+	var msg = "";
+	try {
+		switch (type) {
+			case "signed_data":
+				sendMessage.data = {};
+				var message = document.getElementById("message").value;
+				document.getElementById("message").value = "";
+				msg = message;
+				if (msgType == "") {
+					if (message.startsWith('/msg ')) {
+						msgType = "chat";
+					} else {
+						msgType = "public_chat";
+					}
+				}
+				//console.log("message: " + msg);
+				switch (msgType) {
+					case "hello":
+						sendMessage.data.type = "hello";
+						sendMessage.data.public_key = pem;
+						break;
+					case "chat":
+						sendMessage.data.type = "chat";
+						sendMessage.data.destination_servers = [];
+
+						var participants = [my_fp];
+						for (var btn of document.getElementsByClassName("client_btns")) {
+							if (btn.getAttribute("selectedstate") == "on") {
+								if (!sendMessage.data.destination_servers.includes(btn.getAttribute("destserver"))) {
+									sendMessage.data.destination_servers.push(btn.getAttribute("destserver"));
+								}
+								var bfp = btn.getAttribute("title");
+								participants.push(bfp);
+							}
+						}
+						var chat = {};
+						chat.participants = participants;
+						chat.message = msg;
+
+						console.log("chat");
+						console.log(chat);
+						var aes = aesEncrypt(JSON.stringify(chat));
+
+						sendMessage.data.chat = aes.out;
+						sendMessage.data.iv = aes.iv;
+						sendMessage.data.symm_keys = [];
+						for (pfp of participants) {
+							if (pfp != my_fp) {
+								var ppk = getClientPk(pfp);
+								if (ppk != -1) {
+									sendMessage.data.symm_keys.push(rsaEncrypt(aes.key, ppk));
+								} else {
+									console.log("no such participant");
+								}
+							}
+						}
+						console.log(sendMessage);
+						chat_window.innerHTML = "ME: " + msg + "<br>" + chat_window.innerHTML;
+						break;
+					case "public_chat":
+						sendMessage.data.type = "public_chat";
+						sendMessage.data.sender = my_fp;
+						sendMessage.data.message = msg;
+						chat_window.innerHTML = "ME: " + msg + "<br>" + chat_window.innerHTML;
+						break;
+					default:
+						break;
+				}
+				myCounter += 1;
+				sendMessage.counter = myCounter;
+				var shaHash = await sha256(JSON.stringify(sendMessage.data) + sendMessage.counter);
+				sendMessage.signature = sign(shaHash);
+				console.log(sendMessage);
+				break;
+			default:
+				break;
+		}
+	} catch (error) {
+		console.log(error);
+	}
+	//console.log(sendMessage);
+	try {
+		ws.send(JSON.stringify(sendMessage));
+	} catch (error) {
+		chat_window.innerHTML = error + "<br>" + chat_window.innerHTML;
+	}
+}
+
+</script>
+</html>
