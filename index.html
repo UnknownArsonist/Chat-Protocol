@@ -10,42 +10,67 @@
 		<form action='javascript:void(0)' id='form' onsubmit="sendMsg('signed_data')">
 			<input type='text' name='message' id='message' />
 			<br>
-			<input type='submit' name='submit' id='submit' />
+			<input type='submit' name='submit' id='submit' value='Send' />
 		</form>
 		<br>
 		<form action='javascript:void(0)' id="client_list">
 		</form>
-		<form action='javascript:void(0)' id="file_upload">
-			<input type="file" id="file" name="file" onchange="previewFile(this)" accept="image/png, image/jpeg" />
-			<img id='preview' src="#">
+		<form action='javascript:void(0)' onsubmit="sendFile()" id="file_upload">
+			<input type="file" id="file" name="file" onchange="setFile(this)" accept="image/png, image/jpeg" />
+			<input type='submit' name='filesubmit' id='filesubmit' value='Upload File' />
 		</form>
+		<div id='fileuploadres'>
+		</div>
 		<div id="chat_window">
 		</div>
 	</body>
 <script src="https://cdn.jsdelivr.net/npm/node-forge@1.0.0/dist/forge.min.js"></script>
 <script>
+var file_to_upload = null;
 
-function previewFile(obj) {
+var server_ip = "https://unknownweb.ddns.net:81";
+var server_ws = "wss://unknownweb.ddns.net:81";
+
+function setFile(obj) {
 	var file = obj.files[0];
-	var preview = document.getElementById("preview");
-	var reader = new FileReader();
-
-	reader.onloadend = function() {
-		preview.src = reader.result;
-	}
 
 	if (file) {
-		reader.readAsDataURL(file);
+		file_to_upload = file;
 	} else {
-		preview.src = "";
+		file_to_upload = null;
 	}
 }
 
 function sendFile() {
+	if (file_to_upload != null) {
+		var reader = new FileReader();
 
+		reader.onloadend = function() {
+			var result = reader.result;
+			fetch(server_ip, {
+				method: "POST",
+				body: result
+			}).then((response) => response.json()).then((json) => {
+				console.log(json);
+				if (json.status == "Created") {
+					document.getElementById('fileuploadres').innerHTML = "File Uploaded to: " + json.url;
+					console.log("File Uploaded to: " + json.url);
+				} else {
+					document.getElementById('fileuploadres').innerHTML = "File Failed to Upload";
+					console.log("File Failed to Upload");
+				}
+			});
+		}
+
+		if (file) {
+			reader.readAsDataURL(file_to_upload);
+		} else {
+			console.log("File does not exist");
+		}
+	}
 }
 
-var ws = new WebSocket("wss://unknownweb.ddns.net:81");
+var ws = new WebSocket(server_ws);
 
 var rsa = forge.rsa;
 var pki = forge.pki;
@@ -170,10 +195,14 @@ async function handleMessage(msg) {
 					if (chat.participants != undefined) {
 						var sender = chat.participants[0];
 						var s_pk = getClientPk(sender);
-						if (verifySig(dataObj, s_pk)) {
-							chat_window.innerHTML = sender + ": " + chat.message + "<br>" + chat_window.innerHTML;
+						if (checkCounter(data.sender, dataObj.counter) != -1) {
+							if (verifySig(dataObj, s_pk)) {
+								chat_window.innerHTML = sender + ": " + chat.message + "<br>" + chat_window.innerHTML;
+							} else {
+								console.log("invalid signature verification");
+							}
 						} else {
-							console.log("invalid signature verification");
+							console.log("replay attack detected!");
 						}
 					}
 					break;
@@ -383,7 +412,6 @@ async function sendMsg(type, msgType = "") {
 				sendMessage.counter = myCounter;
 				var shaHash = await sha256(JSON.stringify(sendMessage.data) + sendMessage.counter);
 				sendMessage.signature = sign(shaHash);
-				console.log(sendMessage);
 				break;
 			default:
 				break;
@@ -391,7 +419,7 @@ async function sendMsg(type, msgType = "") {
 	} catch (error) {
 		console.log(error);
 	}
-	//console.log(sendMessage);
+	console.log(sendMessage);
 	try {
 		ws.send(JSON.stringify(sendMessage));
 	} catch (error) {

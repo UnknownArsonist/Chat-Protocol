@@ -3,6 +3,7 @@ const http = require('http');
 const fs = require('fs');
 const WebSocket = require('ws');
 const crypto = require('crypto');
+const url = require('url');
 
 var connectedServers = [];
 
@@ -24,11 +25,13 @@ var clientList = {};
 	}
 });*/
 
+var hosted_ip = "unknownweb.ddns.net:81";
+
 var publicKey = crypto.createPublicKey(fs.readFileSync("pubk.pem"));
 var privateKey = crypto.createPrivateKey(fs.readFileSync("privk.pem"));
 
-var myIP = "wss://unknownweb.ddns.net:81";
-var myWIP = "https://unknownweb.ddns.net:81";
+var myIP = "wss://" + hosted_ip;
+var myWIP = "https://" + hosted_ip;
 
 function encryptData(k, d) {
 	var edata = crypto.publicEncrypt({
@@ -111,10 +114,10 @@ function formMessage(type) {
 		case "client_list":
 			msg.servers = [];
 			for (var i = 0; i < connectedServers.length; i++) {
-        var tclient = [];
-        if (clientList[connectedServers[i].ip] != undefined) {
-          tclient = clientList[connectedServers[i].ip];
-        }
+				var tclient = [];
+				if (clientList[connectedServers[i].ip] != undefined) {
+					tclient = clientList[connectedServers[i].ip];
+				}
 				msg.servers.push({
 					address: connectedServers[i].ip,
 					clients: tclient
@@ -129,15 +132,15 @@ function formMessage(type) {
 			}
 			msg.servers.push(my_server_clients);
 			break;
-    case "server_hello":
-      msg.type = "signed_data";
-      msg.data = {
-        type: "server_hello",
-        sender: myIP
-      };
-      msg.counter = 0;
-      msg.signature = crypto.sign("SHA256", Buffer.from(JSON.stringify(msg.data) + msg.counter), privateKey).toString('base64');
-      break;
+		case "server_hello":
+			msg.type = "signed_data";
+			msg.data = {
+				type: "server_hello",
+				sender: myIP
+			};
+			msg.counter = 0;
+			msg.signature = crypto.sign("SHA256", Buffer.from(JSON.stringify(msg.data) + msg.counter), privateKey).toString('base64');
+			break;
 		default:
 			break;
 	}
@@ -147,100 +150,100 @@ function formMessage(type) {
 function handleMessage(ws, msg) {
 	var dataObj = JSON.parse(msg);
 	console.log("Received: " + dataObj.type);
-  console.log("From: " + ws.fingerprint);
-  console.log(dataObj);
-  try {
-  	switch (dataObj.type) {
-  		case "signed_data":
-  			var data = dataObj.data;
-  			console.log("t: " + data.type);
-  			switch (data.type) {
-  				case "hello":
-  					// retrieve data.public_key (this is the client's RSA public key)
-  					if (!(data.public_key == undefined)) {
-  						ws.type = "client";
-  						ws.public_key = data.public_key;
-  						ws.fingerprint = crypto.createHash('sha256').update(data.public_key).digest('base64');
-  						console.log("New Client Connected!");
-  						connectedClients.push(ws);
-  						sendToList(connectedClients.slice(0,-1), JSON.stringify(formMessage("client_list")));
-  						var client_uplist = formMessage("client_update");
-  						sendToList(connectedServers, JSON.stringify(client_uplist));
-  					}
-  					break;
-  				case "chat":
-  					for (var ds of data.destination_servers) {
-  						// for each destination server, pass on the dataObj
-  						// if destination_server = this_server, broadcast dataObj to all clients
-  						console.log(ds);
-  						switch(ws.type) {
-  							case "client":
-  								if (ds == myIP) {
-  									sendToList(connectedClients, JSON.stringify(dataObj), ws.fingerprint);
-  								} else {
-  									var dest_server = resolveServerSocket(ds);
-  									if (dest_server != null) {
-  										dest_server.send(JSON.stringify(dataObj));
-  									} else {
-  										//send failed?
-  									}
-  								}
-  								break;
-  							case "server":
-  								if (ds == myIP) {
-  									sendToList(connectedClients, JSON.stringify(dataObj));
-  								}
-  								break;
-  							default:
-  								break;
-  						}
-  					}
-  					break;
-  				case "public_chat":
-  					sendToList(connectedClients, JSON.stringify(dataObj), data.sender);
-  					sendToList(connectedServers, JSON.stringify(dataObj));
-  					break;
-  				case "server_hello":
-  					var pk = getServerPubKey(data.sender);
-  					if (pk != null) {
-              var v = crypto.verify("SHA256", Buffer.from(JSON.stringify(data) + dataObj.counter), crypto.createPublicKey(pk), Buffer.from(dataObj.signature));
-  						console.log(v);
-              ws.ip = data.sender;
-  						ws.public_key = pk;
-              ws.type = "server";
-              connectedServers.push(ws);
-              console.log("Connected to server: " + ws.ip);
-  					}
-  					break;
-  				default:
-  					break;
-  			}
-  			break;
-  		case "client_list_request":
-  			if (ws.type == "client") {
-  				var client_list = formMessage("client_list");
-  				ws.send(JSON.stringify(client_list));
-  			}
-  			break;
-  		case "client_update":
-  			if (ws.type == "server") {
-  				clientList[ws.ip] = dataObj.clients;
-  				var client_list = formMessage("client_list");
-  				sendToList(connectedClients, JSON.stringify(client_list));
-  			}
-  			break;
-  		case "client_update_request":
-  			if (ws.type == "server") {
-  				var client_update = formMessage("client_update");
-  				ws.send(JSON.stringify(client_update));
-  			}
-  			break;
-  		default:
-  			break;
+	console.log("From: " + ws.fingerprint);
+	console.log(dataObj);
+	try {
+		switch (dataObj.type) {
+			case "signed_data":
+				var data = dataObj.data;
+				console.log("t: " + data.type);
+				switch (data.type) {
+					case "hello":
+						// retrieve data.public_key (this is the client's RSA public key)
+						if (!(data.public_key == undefined)) {
+							ws.type = "client";
+							ws.public_key = data.public_key;
+							ws.fingerprint = crypto.createHash('sha256').update(data.public_key).digest('base64');
+							console.log("New Client Connected!");
+							connectedClients.push(ws);
+							sendToList(connectedClients.slice(0,-1), JSON.stringify(formMessage("client_list")));
+							var client_uplist = formMessage("client_update");
+							sendToList(connectedServers, JSON.stringify(client_uplist));
+						}
+						break;
+					case "chat":
+						for (var ds of data.destination_servers) {
+							// for each destination server, pass on the dataObj
+							// if destination_server = this_server, broadcast dataObj to all clients
+							console.log(ds);
+							switch(ws.type) {
+								case "client":
+									if (ds == myIP) {
+										sendToList(connectedClients, JSON.stringify(dataObj), ws.fingerprint);
+									} else {
+										var dest_server = resolveServerSocket(ds);
+										if (dest_server != null) {
+											dest_server.send(JSON.stringify(dataObj));
+										} else {
+											//send failed?
+										}
+									}
+									break;
+								case "server":
+									if (ds == myIP) {
+										sendToList(connectedClients, JSON.stringify(dataObj));
+									}
+									break;
+								default:
+									break;
+							}
+						}
+						break;
+					case "public_chat":
+						sendToList(connectedClients, JSON.stringify(dataObj), data.sender);
+						sendToList(connectedServers, JSON.stringify(dataObj));
+						break;
+					case "server_hello":
+						var pk = getServerPubKey(data.sender);
+						if (pk != null) {
+							var v = crypto.verify("SHA256", Buffer.from(JSON.stringify(data) + dataObj.counter), crypto.createPublicKey(pk), Buffer.from(dataObj.signature));
+							console.log(v);
+							ws.ip = data.sender;
+							ws.public_key = pk;
+							ws.type = "server";
+							connectedServers.push(ws);
+							console.log("Connected to server: " + ws.ip);
+						}
+						break;
+					default:
+						break;
+				}
+				break;
+			case "client_list_request":
+				if (ws.type == "client") {
+					var client_list = formMessage("client_list");
+					ws.send(JSON.stringify(client_list));
+				}
+				break;
+			case "client_update":
+				if (ws.type == "server") {
+					clientList[ws.ip] = dataObj.clients;
+					var client_list = formMessage("client_list");
+					sendToList(connectedClients, JSON.stringify(client_list));
+				}
+				break;
+			case "client_update_request":
+				if (ws.type == "server") {
+					var client_update = formMessage("client_update");
+					ws.send(JSON.stringify(client_update));
+				}
+				break;
+			default:
+				break;
 	 }
-  } catch (error) {
-    console.log(error);
-  }
+	} catch (error) {
+		console.log(error);
+	}
 }
 
 var args = process.argv.slice(2);
@@ -300,22 +303,47 @@ var app = (req, res) => {
 				data += chunk;
 			});
 			req.on('end', () => {
-				res.statusCode = 201;
-				var buf = new Buffer(data.toString('binary'), 'binary');
-				fs.writeFile("testfile.png", buf, (err) => {
+				var img = data.replace(/^data:image\/\w+;base64,/, "");
+				var buf = Buffer.from(img, 'base64');
+				var randFileName = "files/" + (Math.random() + 1).toString(36).substring(7);
+				fs.writeFile(randFileName, buf, (err) => {
+					var stat = "";
+					var link = myWIP + "/" + randFileName;
 					if (err) {
 						console.log(err);
+						res.statusCode = 413;
+						stat = "Failed";
+					} else {
+						res.statusCode = 201;
+						stat = "Created";
 					}
-					var link = myWIP + "/testfile.png";
-					res.setHeader('Content-Type', 'text/html');
-					res.end('File Created at: ' + link);
+					res.setHeader('Content-Type', 'application/json');
+					res.end(JSON.stringify({
+						status: stat,
+						url: link
+					}));
 				});
 			});
 			break;
 		case "GET":
-			res.statusCode = 200;
-			res.setHeader('Content-Type', 'text/html');
-			res.end(fs.readFileSync("index.html"));
+			var pathname = url.parse(req.url).pathname;
+			console.log(pathname);
+			if (pathname == "/") {
+				res.statusCode = 200;
+				res.setHeader('Content-Type', 'text/html');
+				res.end(fs.readFileSync("index.html"));
+			} else if (pathname.startsWith("/files/")) {
+				console.log("files access");
+				if (fs.existsSync(pathname.slice(1))) {
+					res.statusCode = 200;
+					res.setHeader('Content-Type', 'text/plain');
+					res.end(fs.readFileSync(pathname.slice(1)));
+				} else {
+					res.statusCode = 404;
+					res.setHeader('Content-Type', 'text/plain');
+					res.end('404 Page Not Found');
+				}
+			}
 			break;
 		default:
 			res.statusCode = 404;
