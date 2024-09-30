@@ -5,31 +5,58 @@
 		</title>
 	</head>
 	<body>
-		Chat Protocol
-		<br>
-		<form action='javascript:void(0)' id='form' onsubmit="sendMsg('signed_data')">
-			<input type='text' name='message' id='message' />
-			<br>
-			<input type='submit' name='submit' id='submit' value='Send' />
-		</form>
-		<br>
-		<form action='javascript:void(0)' id="client_list">
-		</form>
-		<form action='javascript:void(0)' onsubmit="sendFile()" id="file_upload">
-			<input type="file" id="file" name="file" onchange="setFile(this)" accept="image/png, image/jpeg" />
-			<input type='submit' name='filesubmit' id='filesubmit' value='Upload File' />
-		</form>
-		<div id='fileuploadres'>
+		<div class='maincont' id='server_info'>
+			<form action='javascript:void(0)' onsubmit="serverInfo()">
+				Websocket Server:
+				<br>
+				<input type="text" id="wsserver">
+				<br>
+				File Server:
+				<br>
+				<input type="text" id="fileserver">
+				<br>
+				<input type="submit" value="submit">
+			</form>
 		</div>
-		<div id="chat_window">
+		<div class='maincont' style="display:none" id='chat_proto'>
+			<h2>
+				Chat Protocol
+			</h2>
+			<p id='myfp'>
+			</p>
+			<div action='javascript:void(0)' id="client_list">
+			</div>
+			<br>
+			<form action='javascript:void(0)' onsubmit="sendFile()" id="file_upload">
+				<input type="file" id="file" name="file" onchange="setFile(this)" accept="image/png, image/jpeg" />
+				<input type='submit' name='filesubmit' id='filesubmit' value='Upload File' />
+			</form>
+			<form action='javascript:void(0)' id='form' onsubmit="sendMsg('signed_data')">
+				<input type='text' name='message' id='message' />
+				<input type='submit' name='submit' id='submit' value='Send' />
+			</form>
+			<div id="chat_window">
+			</div>
 		</div>
 	</body>
 <script src="https://cdn.jsdelivr.net/npm/node-forge@1.0.0/dist/forge.min.js"></script>
 <script>
+
 var file_to_upload = null;
 
-var server_ip = "https://unknownweb.ddns.net:81";
-var server_ws = "wss://unknownweb.ddns.net:81";
+var server_ip = "https://" + location.host;
+var server_ws = "wss://" + location.host;
+
+var servi = document.getElementById("server_info");
+var chatp = document.getElementById("chat_proto");
+
+document.getElementById("wsserver").value = server_ws;
+document.getElementById("fileserver").value = server_ip;
+
+function timeStamp() {
+	var d = new Date();
+	return "[" + d.getHours() + ":" + d.getMinutes() + ":" + d.getSeconds() + "]";
+}
 
 function setFile(obj) {
 	var file = obj.files[0];
@@ -70,7 +97,26 @@ function sendFile() {
 	}
 }
 
-var ws = new WebSocket(server_ws);
+function escapeHTML(str) {
+	return str.replace(/[&<>"'\/]/g, function (char) {
+		switch (char) {
+			case '&':
+				return '&amp;';
+			case '<':
+				return '&lt;';
+			case '>':
+				return '&gt;';
+			case '"':
+				return '&quot;';
+			case '\\':
+				return '&#39;';
+			case '/':
+				return '&#x2F;';
+			default:
+				return char;
+		}
+	});
+}
 
 var rsa = forge.rsa;
 var pki = forge.pki;
@@ -122,6 +168,8 @@ function getClientPk(fp) {
 function getClientIndex(fp, s = null) {
 	if (clientList[s] == null) return -1;
 	for (var j = 0; j < clientList[s].length; j++) {
+		console.log(fp);
+		console.log(clientList[s][j].fp);
 		if (fp == clientList[s][j].fp) {
 			return j;
 		}
@@ -131,20 +179,26 @@ function getClientIndex(fp, s = null) {
 
 function toggleSelect(obj) {
 	if (obj.getAttribute("selectedstate") == "off") {
-		obj.style.background = "#00aa00";
+		obj.classList.remove("selectoff");
+		obj.classList.add("selecton");
 		obj.setAttribute("selectedstate", "on");
 	} else {
-		obj.style.background = "#aa0000";
+		obj.classList.remove("selecton");
+		obj.classList.add("selectoff");
 		obj.setAttribute("selectedstate", "off");
+	}
+	var dserver = obj.getAttribute("destserver");
+	var fp = obj.getAttribute('title');
+	for (var i = 0; i < clientList[dserver].length; i++) {
+		if (fp == clientList[dserver][i].fp) {
+			clientList[dserver][i].selected = obj.getAttribute("selectedstate");
+		}
 	}
 }
 
 function updateGUI() {
 	var client_list = document.getElementById("client_list");
 	client_list.innerHTML = "";
-	var me = document.createElement("a");
-	me.innerHTML = my_fp;
-	client_list.appendChild(me);
 	for (s in clientList) {
 		var server_title = document.createElement('p');
 		server_title.innerHTML = s;
@@ -153,8 +207,13 @@ function updateGUI() {
 			if (clientList[s][i].fp != my_fp) {
 				var client_btn = document.createElement('button');
 				client_btn.innerHTML = "Client: " + i;
-				client_btn.setAttribute("selectedstate", "off");
-				client_btn.className = "client_btns";
+				if (clientList[s][i].selected == "on") {
+					client_btn.setAttribute("selectedstate", "on");
+					client_btn.className = "client_btns selecton";
+				} else {
+					client_btn.setAttribute("selectedstate", "off");
+					client_btn.className = "client_btns selectoff";
+				}
 				client_btn.setAttribute("title", clientList[s][i].fp);
 				client_btn.setAttribute("onclick", "toggleSelect(this)");
 				client_btn.setAttribute("destserver", s);
@@ -195,9 +254,10 @@ async function handleMessage(msg) {
 					if (chat.participants != undefined) {
 						var sender = chat.participants[0];
 						var s_pk = getClientPk(sender);
-						if (checkCounter(data.sender, dataObj.counter) != -1) {
+						if (checkCounter(sender, dataObj.counter) != -1) {
 							if (verifySig(dataObj, s_pk)) {
-								chat_window.innerHTML = sender + ": " + chat.message + "<br>" + chat_window.innerHTML;
+								var chat_str = escapeHTML(timeStamp() + " " + sender + ": " + chat.message);
+								chat_window.innerHTML = "<p class='chatmsgrecv'>" + chat_str + "</p>" + chat_window.innerHTML;
 							} else {
 								console.log("invalid signature verification");
 							}
@@ -208,7 +268,8 @@ async function handleMessage(msg) {
 					break;
 				case "public_chat":
 					if (checkCounter(data.sender, dataObj.counter) != -1) {
-						chat_window.innerHTML = data.sender + ": " + data.message + "<br>" + chat_window.innerHTML;
+						var chat_str = escapeHTML(timeStamp() + " " + data.sender + ": " + data.message);
+						chat_window.innerHTML = "<p class='publicmsg'>" + chat_str + "</p>" + chat_window.innerHTML;
 						//console.log(data.sender + ": " + data.message);
 					}
 					break;
@@ -223,14 +284,16 @@ async function handleMessage(msg) {
 					var c = dataObj.servers[i].clients[j];
 					var c_fp = await sha256(c);
 					if (c_fp != my_fp) {
-						var ind = getClientIndex(c, dataObj.servers[i].address);
+						var ind = getClientIndex(await sha256(c), dataObj.servers[i].address);
 						if (ind == -1) {
 							t_cl.push({
 								fp: c_fp,
 								public_key: c,
-								counter: 0
+								counter: 0,
+								selected: "off"
 							});
 						} else {
+							console.log(clientList[dataObj.servers[i].address][ind]);
 							t_cl.push(clientList[dataObj.servers[i].address][ind]);
 						}
 					}
@@ -244,24 +307,44 @@ async function handleMessage(msg) {
 	}
 }
 
-ws.addEventListener("open", (e) => {
-	console.log("connected to server");
-	rsa.generateKeyPair({bits: 2048, e: 0x10001}, async function(err, keypair) {
-		privateKey = keypair.privateKey;
-		publicKey = keypair.publicKey;
-		pem = pki.publicKeyToPem(publicKey);
-		console.log(pem);
-		my_fp = await sha256(pem);
-		console.log(my_fp);
-		sendMsg("signed_data", "hello").then(() => {
-			sendMsg("client_list_request");
+var ws = null;
+
+function serverInfo() {
+	var wsserver = document.getElementById("wsserver").value;
+	var fileserver = document.getElementById("fileserver").value;
+	if (wsserver != "") {
+		server_ws = wsserver;
+	}
+	if (fileserver != "") {
+		server_ip = fileserver;
+	}
+
+	ws = new WebSocket(server_ws);
+
+	ws.addEventListener("open", (e) => {
+		console.log("connected to server");
+		rsa.generateKeyPair({bits: 2048, e: 0x10001}, async function(err, keypair) {
+			privateKey = keypair.privateKey;
+			publicKey = keypair.publicKey;
+			pem = pki.publicKeyToPem(publicKey);
+			console.log(pem);
+			my_fp = await sha256(pem);
+			console.log(my_fp);
+			var me = document.getElementById("myfp");
+			me.innerHTML = my_fp;
+			sendMsg("signed_data", "hello").then(() => {
+				sendMsg("client_list_request");
+			});
 		});
 	});
-});
 
-ws.addEventListener("message", (event) => {
-	handleMessage(event.data);
-});
+	ws.addEventListener("message", (event) => {
+		handleMessage(event.data);
+	});
+
+	servi.style.display = "none";
+	chatp.style.display = "block";
+}
 
 async function sha256(message) {
 	var msgBuffer = new TextEncoder().encode(message);
@@ -277,28 +360,34 @@ function aesEncrypt(msg) {
 	var cipher = forge.cipher.createCipher('AES-GCM', key);
 	cipher.start({
 		iv: iv,
-		tagLength: 0
+		tagLength: 128
 	});
 	cipher.update(forge.util.createBuffer(msg));
 	cipher.finish();
 	var enc = cipher.output.data;
-	return {iv:btoa(iv),key:btoa(key),out:btoa(enc)};
+	var tag = cipher.mode.tag;
+	//console.log(enc);
+	return {iv:btoa(iv),key:btoa(key),out:btoa(enc + tag.data)};
 }
 
 function aesDecrypt(key, iv, msg) {
 	key = atob(key);
 	iv = atob(iv);
 	msg = atob(msg);
+	var enc = msg.substr(0, msg.length - 16);
+	var tag = forge.util.createBuffer(msg.substr(msg.length - 16));
 	var decipher = forge.cipher.createDecipher('AES-GCM', key);
 	decipher.start({
 		iv: iv,
-		tagLength: 0
+		tagLength: 128,
+		tag: tag
 	});
-	decipher.update(forge.util.createBuffer(msg));
+	decipher.update(forge.util.createBuffer(enc));
 	var pass = decipher.finish();
 	if (pass) {
 		return decipher.output.data;
 	} else {
+		console.log("failed aes auth");
 		return null;
 	}
 }
@@ -350,6 +439,7 @@ async function sendMsg(type, msgType = "") {
 				msg = message;
 				if (msgType == "") {
 					if (message.startsWith('/msg ')) {
+						msg = message.substr(4);
 						msgType = "chat";
 					} else {
 						msgType = "public_chat";
@@ -397,13 +487,15 @@ async function sendMsg(type, msgType = "") {
 							}
 						}
 						console.log(sendMessage);
-						chat_window.innerHTML = "ME: " + msg + "<br>" + chat_window.innerHTML;
+						var chat_str = timeStamp() + " " + "ME: " + msg;
+						chat_window.innerHTML = "<p class='chatmsgsend'>" + escapeHTML(chat_str) + "</p>" + chat_window.innerHTML;
 						break;
 					case "public_chat":
 						sendMessage.data.type = "public_chat";
 						sendMessage.data.sender = my_fp;
 						sendMessage.data.message = msg;
-						chat_window.innerHTML = "ME: " + msg + "<br>" + chat_window.innerHTML;
+						var chat_str = timeStamp() + " " + "ME: " + msg;
+						chat_window.innerHTML = "<p class='publicmsg'>" + escapeHTML(chat_str) + "</p>" + chat_window.innerHTML;
 						break;
 					default:
 						break;
@@ -426,6 +518,56 @@ async function sendMsg(type, msgType = "") {
 		chat_window.innerHTML = error + "<br>" + chat_window.innerHTML;
 	}
 }
-
 </script>
+<style>
+html, body {
+	margin: 0px;
+	font-family: Calibri;
+}
+.maincont {
+	display: flex;
+	padding: 20px;
+	background: #e2e2e2;
+	font-weight: 600;
+	margin: auto;
+	width: calc(100% - 100px);
+	max-width: 800px;
+	justify-content: center;
+}
+#chat_window {
+	word-wrap: break-word;
+}
+.selecton {
+	background: #00aa00;
+}
+.selectoff {
+	background: #aa0000;
+}
+#chat_window p {
+	margin: 0px;
+	padding: 5px;
+}
+.publicmsg {
+	background: transparent;
+}
+.chatmsgsend {
+	background: #e2e2ff;
+}
+.chatmsgrecv {
+	background: #e2ffe2;
+}
+#client_list {
+	background: #d2d2d2;
+	padding: 5px;
+}
+#client_list p {
+	margin: 0px;
+	padding: 5px;
+}
+#myfp {
+	margin: 0px;
+	padding: 5px;
+	background: #d2efd2;
+}
+</style>
 </html>

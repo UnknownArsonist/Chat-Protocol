@@ -25,13 +25,14 @@ var clientList = {};
 	}
 });*/
 
-var hosted_ip = "unknownweb.ddns.net:81";
-
 var publicKey = crypto.createPublicKey(fs.readFileSync("pubk.pem"));
 var privateKey = crypto.createPrivateKey(fs.readFileSync("privk.pem"));
 
-var myIP = "wss://" + hosted_ip;
-var myWIP = "https://" + hosted_ip;
+var hosted_ip = "localhost";
+var port = '81';
+
+var myIP = "wss://" + hosted_ip + ":" + port;
+var myWIP = "https://" + hosted_ip + ":" + port;
 
 function encryptData(k, d) {
 	var edata = crypto.publicEncrypt({
@@ -246,10 +247,6 @@ function handleMessage(ws, msg) {
 	}
 }
 
-var args = process.argv.slice(2);
-
-var port = '80';
-
 var authdServers = [];
 
 authdServers.push({
@@ -263,30 +260,6 @@ authdServers.push({
 "J/c907T1yyZqaDDaIMXWbBJedQZlWa0Ohbd0+gUk7Tsw/+6j3ZPTz4aUEN2Zq3bJ\n" +
 "aQIDAQAB\n" +
 "-----END PUBLIC KEY-----"
-});
-
-if (args.length > 0) {
-	port = args[0];
-	authdServers = [];
-}
-
-authdServers.forEach((s) => {
-	var websock = new WebSocket(s.ip, {perMessageDeflate: false});
-	websock.on("error", (e) => {
-		console.log(e);
-	});
-	websock.on("message", (message, isBinary) => {
-		var msg = isBinary ? message : message.toString();
-		handleMessage(websock, msg);
-	});
-	websock.on("open", () => {
-		websock.type = "server";
-		websock.ip = s.ip;
-		websock.public_key = s.public_key;
-		connectedServers.push(websock);
-		console.log("Connected to server: " + s.ip);
-		websock.send(JSON.stringify(formMessage("server_hello")));
-	});
 });
 
 var options = {
@@ -353,16 +326,46 @@ var app = (req, res) => {
 	}
 };
 
-var server = http.createServer(app).listen(port, () => {
-	console.log(`HTTP Server Running on localhost:${port}`);
+var args = process.argv.slice(2);
+
+if (args.length > 0) {
+	hosted_ip = args[0];
+	if (args.length > 1) {
+		port = args[1];
+	}
+	myIP = "wss://" + hosted_ip + ":" + port;
+	myWIP = "https://" + hosted_ip + ":" + port;
+}
+
+var server = http.createServer(app).listen(parseInt(port) - 1, () => {
+	console.log(`HTTP Server Running on ${hosted_ip}:${parseInt(port) - 1}`);
 });
 
-var httpsServer = https.createServer(options, app).listen(parseInt(port) + 1, () => {
-	console.log(`HTTPS Server Running on localhost:${parseInt(port) + 1}`);
+var httpsServer = https.createServer(options, app).listen(parseInt(port), () => {
+	console.log(`HTTPS Server Running on ${hosted_ip}:${port}`);
 });
 
 var wss = new WebSocket.Server({
 	server: httpsServer
+});
+
+authdServers.forEach((s) => {
+	var websock = new WebSocket(s.ip, {perMessageDeflate: false});
+	websock.on("error", (e) => {
+		console.log(e);
+	});
+	websock.on("message", (message, isBinary) => {
+		var msg = isBinary ? message : message.toString();
+		handleMessage(websock, msg);
+	});
+	websock.on("open", () => {
+		websock.type = "server";
+		websock.ip = s.ip;
+		websock.public_key = s.public_key;
+		connectedServers.push(websock);
+		console.log("Connected to server: " + s.ip);
+		websock.send(JSON.stringify(formMessage("server_hello")));
+	});
 });
 
 wss.on('connection', (ws) => {
