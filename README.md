@@ -10,6 +10,15 @@ example:
 ```
 nodejs server.js example.com 80
 ```
+The file for the authorised servers is called authdServer.json and is to be populated in the format:
+```
+[
+  {
+    "ip":"<Address of the websocketServer hosted by this server>",
+    "public_key":"<Server's public key in PEM format>"
+  }
+]
+```
 ## Client
 Running the client consists of connecting to the nodejs server via the https ip:port that it is running on. then inputting the corresponding websocket server and file server that you will connect to.
 Finally, send public messages by simply typing into the textbox and clicking send
