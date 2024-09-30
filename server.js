@@ -11,6 +11,8 @@ var connectedClients = [];
 
 var clientList = {};
 
+var authdServers = [];
+
 /*const {publicKey, privateKey} = crypto.generateKeyPairSync("rsa", {
 	modulusLength: 2048,
 	publicExponent: 65537,
@@ -202,15 +204,17 @@ function handleMessage(ws, msg) {
 						break;
 					case "public_chat":
 						sendToList(connectedClients, JSON.stringify(dataObj), data.sender);
-						sendToList(connectedServers, JSON.stringify(dataObj));
+						sendToList(connectedServers, JSON.stringify(dataObj), ws.fingerprint);
 						break;
 					case "server_hello":
 						var pk = getServerPubKey(data.sender);
 						if (pk != null) {
-							var v = crypto.verify("SHA256", Buffer.from(JSON.stringify(data) + dataObj.counter), crypto.createPublicKey(pk), Buffer.from(dataObj.signature));
-							console.log(v);
+							var fp = crypto.createHash('sha256').update(pk).digest('base64');
+							//var v = crypto.verify("SHA256", Buffer.from(JSON.stringify(data) + dataObj.counter), crypto.createPublicKey(pk), Buffer.from(dataObj.signature));
+							//console.log(v);
 							ws.ip = data.sender;
 							ws.public_key = pk;
+							ws.fingerprint = fp;
 							ws.type = "server";
 							connectedServers.push(ws);
 							console.log("Connected to server: " + ws.ip);
@@ -247,20 +251,11 @@ function handleMessage(ws, msg) {
 	}
 }
 
-var authdServers = [];
-
-authdServers.push({
-	ip:'ws://203.221.52.227:8765',
-	public_key: "-----BEGIN PUBLIC KEY-----\n" +
-"MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsa1glacGuN85kBX25Zl3\n" +
-"o2behO/gCKf//IXlTkyjUBlprzJAhFNzCARH2Zfr3TZNbujWz/yi82nN63TZLQMh\n" +
-"LN/Rv4fASs3Xe+u50loji1ternXAcavHtmdaBblCHGmQ2FEzsCmyD35bRiH8jPjR\n" +
-"UXkJmASKARu7MPVOXRPVZLXG7TArAB1Gm4ao9BLiarBC7rDLH8Ui2lM9if5WeMK7\n" +
-"HMrvINXL5WSXmXBjmU3ScL51klUqX/5E9i+W7Yh8aUYb/HEn4MiyzaMhHBGB2hqq\n" +
-"J/c907T1yyZqaDDaIMXWbBJedQZlWa0Ohbd0+gUk7Tsw/+6j3ZPTz4aUEN2Zq3bJ\n" +
-"aQIDAQAB\n" +
-"-----END PUBLIC KEY-----"
-});
+if (fs.existsSync('authdServers.json')) {
+	authdServers = JSON.parse(fs.readFileSync('authdServers.json'));
+} else {
+	console.log("[Error] authdServers.json does not exist, no authorised servers loaded");
+}
 
 var options = {
 	key: fs.readFileSync("client-key.pem"),
@@ -359,9 +354,11 @@ authdServers.forEach((s) => {
 		handleMessage(websock, msg);
 	});
 	websock.on("open", () => {
+		var fp = crypto.createHash('sha256').update(s.public_key).digest('base64');
 		websock.type = "server";
 		websock.ip = s.ip;
 		websock.public_key = s.public_key;
+		websock.fingerprint = fp;
 		connectedServers.push(websock);
 		console.log("Connected to server: " + s.ip);
 		websock.send(JSON.stringify(formMessage("server_hello")));
