@@ -211,12 +211,20 @@ function handleMessage(ws, msg) {
 						var pk = getServerPubKey(data.sender);
 						if (pk != null) {
 							var fp = crypto.createHash('sha256').update(pk).digest('base64');
-							ws.ip = data.sender;
-							ws.public_key = pk;
-							ws.fingerprint = fp;
-							ws.type = "server";
-							connectedServers.push(ws);
-							console.log("Connected to server: " + ws.ip);
+							var pubk = crypto.createPublicKey(Buffer.from(pk));
+							var vsig = Buffer.from(dataObj.signature, 'base64');
+							var v = crypto.verify("SHA256", Buffer.from(JSON.stringify(data) + dataObj.counter), pubk, vsig);
+							console.log(v);
+							if (v) {
+								ws.ip = data.sender;
+								ws.public_key = pk;
+								ws.fingerprint = fp;
+								ws.type = "server";
+								connectedServers.push(ws);
+								console.log("Connected to server: " + ws.ip);
+							} else {
+								console.log("server_hello signature verification failed");
+							}
 						}
 						break;
 					default:

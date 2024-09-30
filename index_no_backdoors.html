@@ -255,11 +255,6 @@ async function handleMessage(msg) {
 	console.log(dataObj);
 	switch (dataObj.type) {
 		case "signed_data":
-			/*var sig = Buffer.from(JSON.stringify(dataObj.data)).toString('base64') + dataObj.counter;
-			sig = crypto.createHash('sha256').update(sig).digest('base64');
-			if (sig != dataObj.signature) {
-				return -1;
-			}*/
 			var data = dataObj.data;
 			switch (data.type) {
 				case "chat":
@@ -294,9 +289,14 @@ async function handleMessage(msg) {
 					break;
 				case "public_chat":
 					if (checkCounter(data.sender, dataObj.counter) != -1) {
-						var chat_str = escapeHTML(timeStamp() + " " + data.sender + ": " + data.message);
-						chat_window.innerHTML = "<p class='publicmsg'>" + chat_str + "</p>" + chat_window.innerHTML;
-						//console.log(data.sender + ": " + data.message);
+						var s_pk = getClientPk(data.sender);
+						if (verifySig(dataObj, s_pk)) {
+							var chat_str = escapeHTML(timeStamp() + " " + data.sender + ": " + data.message);
+							chat_window.innerHTML = "<p class='publicmsg'>" + chat_str + "</p>" + chat_window.innerHTML;
+							//console.log(data.sender + ": " + data.message);
+						} else {
+							console.log("invalid signature verification");
+						}
 					}
 					break;
 				default:
