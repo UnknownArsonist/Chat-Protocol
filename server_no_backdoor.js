@@ -278,7 +278,7 @@ var app = (req, res) => {
 				data += chunk;
 			});
 			req.on('end', () => {
-				var img = data.replace(/^data:image\/\w+;base64,/, "");
+				var img = data.replace(/^data:[\w-]+\/[\w-]+;base64,/, "");
 				var buf = Buffer.from(img, 'base64');
 				var randFileName = "files/" + (Math.random() + 1).toString(36).substring(7);
 				fs.writeFile(randFileName, buf, (err) => {
