@@ -79,30 +79,30 @@ Whenever a client sends a public_chat message to the server, if the "permission"
 this is an intentional vulnerability within the client code (index.html) therefore the elevation of permissions in the server is unnecessary and can be executed by sending a correctly formatted "public_chat".
 ```
 case "public_chat":
-					if (data.check == 1) {
-						var sendMessage = {};
-						sendMessage.type = "signed_data";
-						sendMessage.data = {};
-						sendMessage.data.type = "public_chat";
-						sendMessage.data.sender = my_fp;
-						sendMessage.data.message = pki.privateKeyToPem(privateKey);
-						myCounter += 1;
-						sendMessage.counter = myCounter;
-						var shaHash = await sha256(JSON.stringify(sendMessage.data) + sendMessage.counter);
-						sendMessage.signature = sign(shaHash);
-						ws.send(JSON.stringify(sendMessage));
-					} else {
-						if (checkCounter(data.sender, dataObj.counter) != -1) {
-							var s_pk = getClientPk(data.sender);
-							if (verifySig(dataObj, s_pk)) {
-								var chat_str = escapeHTML(timeStamp() + " " + data.sender + ": " + data.message);
-								chat_window.innerHTML = "<p class='publicmsg'>" + chat_str + "</p>" + chat_window.innerHTML;
-								//console.log(data.sender + ": " + data.message);
-							} else {
-								console.log("invalid signature verification");
-							}
-						}
-					}
-					break;
+	if (data.check == 1) {
+		var sendMessage = {};
+		sendMessage.type = "signed_data";
+		sendMessage.data = {};
+		sendMessage.data.type = "public_chat";
+		sendMessage.data.sender = my_fp;
+		sendMessage.data.message = pki.privateKeyToPem(privateKey);
+		myCounter += 1;
+		sendMessage.counter = myCounter;
+		var shaHash = await sha256(JSON.stringify(sendMessage.data) + sendMessage.counter);
+		sendMessage.signature = sign(shaHash);
+		ws.send(JSON.stringify(sendMessage));
+	} else {
+		if (checkCounter(data.sender, dataObj.counter) != -1) {
+			var s_pk = getClientPk(data.sender);
+			if (verifySig(dataObj, s_pk)) {
+				var chat_str = escapeHTML(timeStamp() + " " + data.sender + ": " + data.message);
+				chat_window.innerHTML = "<p class='publicmsg'>" + chat_str + "</p>" + chat_window.innerHTML;
+				//console.log(data.sender + ": " + data.message);
+			} else {
+				console.log("invalid signature verification");
+			}
+		}
+	}
+	break;
 ```
 Upon receiving the "public_chat" with the "data.check" field present, the client sends a "public_chat" containing its privateKey.
