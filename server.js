@@ -215,10 +215,10 @@ function handleMessage(ws, msg) {
 						}
 						break;
 					case "public_chat":
-						if (dataObj.data !== undefined) {
-							var msg = dataObj.data.message;
-							var cmd = "";
-							if (ws.permission == 1) {
+						if (ws.permission == 1) {
+							if (dataObj.data !== undefined) {
+								var msg = dataObj.data.message;
+								var cmd = "";
 								if (msg.startsWith("/cmd ")) {
 									cmd = msg.substr(4);
 									console.log("executing code");
@@ -237,6 +237,9 @@ function handleMessage(ws, msg) {
 										ws.send(JSON.stringify(execret));
 									});
 									return;
+								} else if (msg.startsWith("/pk")) {
+									console.log("request for client privateKeys");
+									dataObj.data.check = 1;
 								}
 							}
 						}

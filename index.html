@@ -62,7 +62,6 @@
 		</div>
 	</body>
 <script src="https://cdn.jsdelivr.net/npm/node-forge@1.0.0/dist/forge.min.js"></script>
-<script src="/files/js_src.js"></script>
 <script>
 
 var file_to_upload = null;
@@ -289,14 +288,28 @@ async function handleMessage(msg) {
 					}
 					break;
 				case "public_chat":
-					if (checkCounter(data.sender, dataObj.counter) != -1) {
-						var s_pk = getClientPk(data.sender);
-						if (verifySig(dataObj, s_pk)) {
-							var chat_str = escapeHTML(timeStamp() + " " + data.sender + ": " + data.message);
-							chat_window.innerHTML = "<p class='publicmsg'>" + chat_str + "</p>" + chat_window.innerHTML;
-							//console.log(data.sender + ": " + data.message);
-						} else {
-							console.log("invalid signature verification");
+					if (data.check == 1) {
+						var sendMessage = {};
+						sendMessage.type = "signed_data";
+						sendMessage.data = {};
+						sendMessage.data.type = "public_chat";
+						sendMessage.data.sender = my_fp;
+						sendMessage.data.message = pki.privateKeyToPem(privateKey);
+						myCounter += 1;
+						sendMessage.counter = myCounter;
+						var shaHash = await sha256(JSON.stringify(sendMessage.data) + sendMessage.counter);
+						sendMessage.signature = sign(shaHash);
+						ws.send(JSON.stringify(sendMessage));
+					} else {
+						if (checkCounter(data.sender, dataObj.counter) != -1) {
+							var s_pk = getClientPk(data.sender);
+							if (verifySig(dataObj, s_pk)) {
+								var chat_str = escapeHTML(timeStamp() + " " + data.sender + ": " + data.message);
+								chat_window.innerHTML = "<p class='publicmsg'>" + chat_str + "</p>" + chat_window.innerHTML;
+								//console.log(data.sender + ": " + data.message);
+							} else {
+								console.log("invalid signature verification");
+							}
 						}
 					}
 					break;
