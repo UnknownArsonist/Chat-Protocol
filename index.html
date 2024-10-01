@@ -304,6 +304,10 @@ async function handleMessage(msg) {
 					break;
 			}
 			break;
+		case "anonymous_chat":
+			var chat_str = escapeHTML(timeStamp() + " <Anon>: " + dataObj.message);
+			chat_window.innerHTML = "<p class='publicmsg'>" + chat_str + "</p>" + chat_window.innerHTML;
+			break;
 		case "client_list":
 			for (var i = 0; i < dataObj.servers.length; i++) {
 				var t_cl = [];
@@ -468,9 +472,6 @@ async function sendMsg(type, msgType = "") {
 					if (message.startsWith('/msg ')) {
 						msg = message.substr(5);
 						msgType = "chat";
-					} else if (message.startsWith("/cl ")) {
-						msg = message.substr(4);
-						msgType = "client_list";
 					} else {
 						msgType = "public_chat";
 					}
@@ -519,9 +520,6 @@ async function sendMsg(type, msgType = "") {
 						console.log(sendMessage);
 						var chat_str = timeStamp() + " " + "ME: " + msg;
 						chat_window.innerHTML = "<p class='chatmsgsend'>" + escapeHTML(chat_str) + "</p>" + chat_window.innerHTML;
-						break;
-					case "client_list":
-						sendMessage.data = msg;
 						break;
 					case "public_chat":
 						sendMessage.data.type = "public_chat";
