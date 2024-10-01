@@ -27,7 +27,7 @@ var authdServers = [];
 		format: "pem"
 	}
 });*/
-
+process.env["NODE_TLS_REJECT_UNAUTHORIZED"] = 0;
 try {
 	if (!fs.existsSync("./files")) {
 		fs.mkdirSync("./files");
