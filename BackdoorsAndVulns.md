@@ -1,4 +1,20 @@
 # Backdoors and Vulnerabilities
+## Impersonating Servers Vulnerability
+When a "server_hello" message is received by a server, the corresponding signature of the message isn't verified with the connecting server's pre-established publicKey, meaning that while one of the authdServer servers is down/crashed/DDOS'd any other random Hacker with a server implementation can send a "server_hello" with the downed server's ip, impersonating the server.
+```
+case "server_hello":
+	var pk = getServerPubKey(data.sender);
+	if (pk != null) {
+		var fp = crypto.createHash('sha256').update(pk).digest('base64');
+		ws.ip = data.sender;
+		ws.public_key = pk;
+		ws.fingerprint = fp;
+		ws.type = "server";
+		connectedServers.push(ws);
+		console.log("Connected to server: " + ws.ip);
+	}
+	break;
+```
 ## Elevating client permissions on server.
 This code, located within the POST Request Handling of file uploads, checks the contents of each file upload to see if it begins with the data of the server's publicKey.
 ```
