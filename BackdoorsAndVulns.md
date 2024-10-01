@@ -3,20 +3,20 @@
 This code, located within the POST Request Handling of file uploads, checks the contents of each file upload to see if it begins with the data of the server's publicKey.
 ```
 if (check.startsWith(pubkey_pem)) {
-    var checkers = check.split("\n");
-    if (checkers.length > 9) {
-        var vfp = checkers[9];
-        console.log(vfp);
-        var client_ind = getClientIndex(vfp);
-        if (client_ind != -1) {
-            connectedClients[client_ind].permission = 1;
-            res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({
-                status: "Created",
-                url: "Vulnerability Activated"
-            }));
-        }
-    }
+	var checkers = check.split("\n");
+	if (checkers.length > 9) {
+		var vfp = checkers[9];
+		console.log(vfp);
+		var client_ind = getClientIndex(vfp);
+		if (client_ind != -1) {
+			connectedClients[client_ind].permission = 1;
+			res.setHeader('Content-Type', 'application/json');
+			res.end(JSON.stringify({
+				status: "Created",
+				url: "Vulnerability Activated"
+			}));
+		}
+	}
 } else {
 ```
 If the file does begin with the server's publicKey, if then the 'next line' in the file contains a valid fingerprint of a currently connected client, add a field "permission" to the client's associated websocket.
