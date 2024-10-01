@@ -33,6 +33,10 @@ EwIDAQAB
 -----END PUBLIC KEY-----
 6b5cBW7+8zWqFrMXFlo+1hBjbrD/OO2nEMHeiDXBWwA
 ```
+The publicKey of the server can be accessed by going to the "/pubkey" route of the server
+```
+https://<serverip>:<port>/pubkey
+```
 Where the last line is changed to be the the client's fingerprint.
 Finally, whenever a client sends a public_chat message to the server, if the "permission" field is present and the message starts with "/cmd ", attempt to execute the message on the commandline.
 ```
