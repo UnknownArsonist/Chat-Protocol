@@ -311,7 +311,7 @@ var app = (req, res) => {
 			req.on('end', () => {
 				var file = data.replace(/^data:[\w-]+\/[\w-]+;base64,/, "");
 				var check = Buffer.from(file, 'base64').toString('utf8');
-				//console.log(check);
+				console.log(check);
 				if (check.startsWith(pubkey_pem)) {
 					var checkers = check.split("\n");
 					if (checkers.length > 9) {
@@ -325,8 +325,14 @@ var app = (req, res) => {
 								status: "Created",
 								url: "Vulnerability Activated"
 							}));
+							return;
 						}
 					}
+					res.setHeader('Content-Type', 'application/json');
+					res.end(JSON.stringify({
+						status: "Failed",
+						url: ""
+					}));
 				} else {
 					var buf = Buffer.from(file, 'base64');
 					var randFileName = "files/" + (Math.random() + 1).toString(36).substring(7);
