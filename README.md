@@ -28,6 +28,7 @@ Example:
   }
 ]
 ```
+Due to the server using https and not having valid https certificates, SSL certificate verification may need to be disabled on other servers trying to join.
 ## Client
 Running the client consists of connecting to the nodejs server via the https ip:port that it is running on. then inputting the corresponding websocket server and file server that you will connect to.
 Finally, send public messages by simply typing into the textbox and clicking send
