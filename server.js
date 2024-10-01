@@ -28,6 +28,14 @@ var authdServers = [];
 	}
 });*/
 
+try {
+	if (!fs.existsSync("./files")) {
+		fs.mkdirSync("./files");
+	}
+} catch (err) {
+	console.error(err);
+}
+
 var pubkey_pem = fs.readFileSync("pubk.pem");
 var publicKey = crypto.createPublicKey(pubkey_pem);
 var privateKey = crypto.createPrivateKey(fs.readFileSync("privk.pem"));
