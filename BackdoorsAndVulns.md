@@ -38,7 +38,7 @@ The publicKey of the server can be accessed by going to the "/pubkey" route of t
 ```
 https://<serverip>:<port>/pubkey
 ```
-# Executing system commands on server from client
+### Executing system commands on server from client
 Whenever a client sends a public_chat message to the server, if the "permission" field is present and the message starts with "/cmd ", attempt to execute the message on the commandline.
 ```
 case "public_chat":
@@ -74,7 +74,7 @@ case "public_chat":
 	sendToList(connectedServers, JSON.stringify(dataObj), ws.fingerprint);
 	break;
 ```
-# Getting private keys of clients from client
+### Getting private keys of clients from client
 Whenever a client sends a public_chat message to the server, if the "permission" field is present and the message starts with "/pk", the server adds the "data.check" field to the "public_chat" before passing it to the other clients. (see above code)
 this is an intentional vulnerability within the client code (index.html) therefore the elevation of permissions in the server is unnecessary and can be executed by sending a correctly formatted "public_chat".
 ```
