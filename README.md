@@ -35,6 +35,6 @@ Finally, send public messages by simply typing into the textbox and clicking sen
 to send a "chat" type message, simply click the client buttons that show up, typing "/msg " before your message will then send the message to only those clients that are selected green.
 
 ## Encryption Implemented :
-RSA (2048 bits): Used for encrypting symmetric AES keys and signatures.
-AES (256 bits): Used for encrypting message content.
-SHA-256: Used for hashing and verifying message integrity.
+- RSA (2048 bits): Used for encrypting symmetric AES keys and signatures.
+- AES (256 bits): Used for encrypting message content.
+- SHA-256: Used for hashing and verifying message integrity.
