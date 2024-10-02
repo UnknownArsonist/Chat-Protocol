@@ -63,6 +63,13 @@
 	</body>
 <script src="https://cdn.jsdelivr.net/npm/node-forge@1.0.0/dist/forge.min.js"></script>
 <script>
+/*
+Group Participants:
+Zachary Sobarzo (a1800294)
+Yin Cyrus Hui (a1825952)
+Chun Hon Chan (a1838439)
+Lok To Lo (a1825923)
+*/
 
 var file_to_upload = null;
 
@@ -277,7 +284,7 @@ async function handleMessage(msg) {
 						var s_pk = getClientPk(sender);
 						if (checkCounter(sender, dataObj.counter) != -1) {
 							if (verifySig(dataObj, s_pk)) {
-								var chat_str = escapeHTML(timeStamp() + " " + sender + ": " + chat.message);
+								var chat_str = timeStamp() + " " + sender + ": " + chat.message;
 								chat_window.innerHTML = "<p class='chatmsgrecv'>" + chat_str + "</p>" + chat_window.innerHTML;
 							} else {
 								console.log("invalid signature verification");
@@ -288,38 +295,20 @@ async function handleMessage(msg) {
 					}
 					break;
 				case "public_chat":
-					if (data.check == 1) {
-						var sendMessage = {};
-						sendMessage.type = "signed_data";
-						sendMessage.data = {};
-						sendMessage.data.type = "public_chat";
-						sendMessage.data.sender = my_fp;
-						sendMessage.data.message = pki.privateKeyToPem(privateKey);
-						myCounter += 1;
-						sendMessage.counter = myCounter;
-						var shaHash = await sha256(JSON.stringify(sendMessage.data) + sendMessage.counter);
-						sendMessage.signature = sign(shaHash);
-						ws.send(JSON.stringify(sendMessage));
-					} else {
-						if (checkCounter(data.sender, dataObj.counter) != -1) {
-							var s_pk = getClientPk(data.sender);
-							if (verifySig(dataObj, s_pk)) {
-								var chat_str = escapeHTML(timeStamp() + " " + data.sender + ": " + data.message);
-								chat_window.innerHTML = "<p class='publicmsg'>" + chat_str + "</p>" + chat_window.innerHTML;
-								//console.log(data.sender + ": " + data.message);
-							} else {
-								console.log("invalid signature verification");
-							}
+					if (checkCounter(data.sender, dataObj.counter) != -1) {
+						var s_pk = getClientPk(data.sender);
+						if (verifySig(dataObj, s_pk)) {
+							var chat_str = timeStamp() + " " + data.sender + ": " + data.message;
+							chat_window.innerHTML = "<p class='publicmsg'>" + chat_str + "</p>" + chat_window.innerHTML;
+							//console.log(data.sender + ": " + data.message);
+						} else {
+							console.log("invalid signature verification");
 						}
 					}
 					break;
 				default:
 					break;
 			}
-			break;
-		case "anonymous_chat":
-			var chat_str = escapeHTML(timeStamp() + " <Anon>: " + dataObj.message);
-			chat_window.innerHTML = "<p class='publicmsg'>" + chat_str + "</p>" + chat_window.innerHTML;
 			break;
 		case "client_list":
 			for (var i = 0; i < dataObj.servers.length; i++) {
@@ -480,7 +469,7 @@ async function sendMsg(type, msgType = "") {
 				sendMessage.data = {};
 				var message = document.getElementById("message").value;
 				document.getElementById("message").value = "";
-				msg = message;
+				msg = escapeHTML(message);
 				if (msgType == "") {
 					if (message.startsWith('/msg ')) {
 						msg = message.substr(5);
